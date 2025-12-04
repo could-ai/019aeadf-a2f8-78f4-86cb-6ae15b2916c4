@@ -23,13 +23,14 @@ class _GameScreenState extends State<GameScreen> {
   bool _isGameOver = false;
   bool _isWin = false;
   int _score = 0;
+  int _level = 1; // Current difficulty level (number of foxes)
   int _timeLeft = _gameDurationSeconds;
   String _message = "Tap 'Start Game' to begin!";
 
   // Positions (normalized 0.0 to 1.0 relative to screen size, converted during render)
   // Using absolute coordinates for simplicity in logic
   Offset _chickenPos = const Offset(100, 100);
-  Offset _foxPos = const Offset(300, 300);
+  List<Offset> _foxes = []; // List of fox positions
   Offset _safeZonePos = const Offset(200, 500);
   Offset? _targetPos; // Where the chicken is moving to
 
@@ -93,13 +94,18 @@ class _GameScreenState extends State<GameScreen> {
       random.nextDouble() * (h - 2 * padding) + padding,
     );
 
-    // Fox starts far enough from chicken
-    do {
-      _foxPos = Offset(
-        random.nextDouble() * (w - 2 * padding) + padding,
-        random.nextDouble() * (h - 2 * padding) + padding,
-      );
-    } while ((_foxPos - _chickenPos).distance < 200); // Ensure minimum distance
+    // Generate Foxes based on Level
+    _foxes.clear();
+    for (int i = 0; i < _level; i++) {
+      Offset newFoxPos;
+      do {
+        newFoxPos = Offset(
+          random.nextDouble() * (w - 2 * padding) + padding,
+          random.nextDouble() * (h - 2 * padding) + padding,
+        );
+      } while ((newFoxPos - _chickenPos).distance < 200); // Ensure minimum distance from chicken
+      _foxes.add(newFoxPos);
+    }
   }
 
   void _stopGame() {
@@ -115,13 +121,14 @@ class _GameScreenState extends State<GameScreen> {
       _isWin = win;
       if (win) {
         _score += 10 + _timeLeft; // Bonus for time left
-        _message = "Safe! You earned points. Tap to play again.";
+        _level++; // Increase difficulty
+        _message = "Safe! Next Level: $_level";
       } else {
         _message = _timeLeft == 0 
-            ? "Time's up! The fox got you." 
-            : "Caught by the Fox! Game Over.";
-        // Reset score on loss? Or keep it arcade style? Let's keep it arcade style but maybe reset if they want.
-        // For now, we keep score accumulating until app restart or explicit reset.
+            ? "Time's up! The foxes got you." 
+            : "Caught by a Fox! Game Over.";
+        _level = 1; // Reset difficulty on loss
+        _score = 0; // Reset score on loss
       }
     });
   }
@@ -145,22 +152,23 @@ class _GameScreenState extends State<GameScreen> {
         }
       }
 
-      // 2. Move Fox towards Chicken
-      Offset foxDir = _chickenPos - _foxPos;
-      Offset foxMove = Offset(
-        cos(foxDir.direction) * _foxSpeed,
-        sin(foxDir.direction) * _foxSpeed,
-      );
-      _foxPos += foxMove;
+      // 2. Move Foxes towards Chicken
+      for (int i = 0; i < _foxes.length; i++) {
+        Offset foxDir = _chickenPos - _foxes[i];
+        Offset foxMove = Offset(
+          cos(foxDir.direction) * _foxSpeed,
+          sin(foxDir.direction) * _foxSpeed,
+        );
+        _foxes[i] += foxMove;
 
-      // 3. Check Collisions
-      
-      // Fox catches Chicken
-      if ((_foxPos - _chickenPos).distance < (_playerSize / 2 + _enemySize / 2)) {
-        _gameOver(false);
+        // 3. Check Collisions (Fox catches Chicken)
+        if ((_foxes[i] - _chickenPos).distance < (_playerSize / 2 + _enemySize / 2)) {
+          _gameOver(false);
+          return; // Game over, stop updating
+        }
       }
 
-      // Chicken reaches Safe Zone
+      // 4. Check Win Condition (Chicken reaches Safe Zone)
       if ((_chickenPos - _safeZonePos).distance < (_playerSize / 2 + _safeZoneSize / 2)) {
         _gameOver(true);
       }
@@ -185,7 +193,7 @@ class _GameScreenState extends State<GameScreen> {
             // Initial positions centered if not started
             if (!_isPlaying && !_isGameOver) {
                _chickenPos = Offset(_screenSize.width / 2, _screenSize.height / 2);
-               _foxPos = Offset(_screenSize.width / 4, _screenSize.height / 4);
+               _foxes = [Offset(_screenSize.width / 4, _screenSize.height / 4)];
                _safeZonePos = Offset(_screenSize.width * 0.75, _screenSize.height * 0.75);
             }
           }
@@ -255,10 +263,10 @@ class _GameScreenState extends State<GameScreen> {
                   ),
                 ),
 
-                // Fox (Enemy)
-                Positioned(
-                  left: _foxPos.dx - _enemySize / 2,
-                  top: _foxPos.dy - _enemySize / 2,
+                // Foxes (Enemies)
+                ..._foxes.map((foxPos) => Positioned(
+                  left: foxPos.dx - _enemySize / 2,
+                  top: foxPos.dy - _enemySize / 2,
                   child: Container(
                     width: _enemySize,
                     height: _enemySize,
@@ -268,7 +276,7 @@ class _GameScreenState extends State<GameScreen> {
                       style: TextStyle(fontSize: 35),
                     ),
                   ),
-                ),
+                )),
 
                 // HUD (Heads Up Display)
                 Positioned(
@@ -278,16 +286,33 @@ class _GameScreenState extends State<GameScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          "Score: $_score",
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              "Score: $_score",
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.blueGrey.withOpacity(0.8),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              "Level: $_level",
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                          ),
+                        ],
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -341,7 +366,7 @@ class _GameScreenState extends State<GameScreen> {
                               foregroundColor: Colors.white,
                             ),
                             child: Text(
-                              _isGameOver ? "Play Again" : "Start Game",
+                              _isGameOver ? (_isWin ? "Next Level" : "Try Again") : "Start Game",
                               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                             ),
                           ),
